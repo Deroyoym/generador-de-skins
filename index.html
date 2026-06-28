@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forja de Skins — Minecraft</title>
+<meta name="description" content="Editor y generador de skins de Minecraft con vista 3D en vivo. Pintá, dale volumen y descargá tu PNG 64×64.">
+<link rel="stylesheet" href="css/styles.css">
+<!-- Three.js para la previsualización 3D (sin build, desde CDN) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>Forja de <span class="blk">Skins</span></h1>
+  <p>Pintá, dale volumen, mirá el personaje moverse y bajá el PNG.</p>
+</header>
+
+<div class="app">
+  <!-- ===== Editor ===== -->
+  <section class="panel">
+    <h2>Lienzo · 64×64</h2>
+    <div class="editor-wrap">
+      <canvas id="editor" width="512" height="512"></canvas>
+      <div class="hud" id="hud">—</div>
+      <div class="zoomhud" id="zoomhud">100%</div>
+    </div>
+
+    <div class="tools">
+      <button class="btn on" data-tool="pencil" title="Lápiz (B)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20l4-1 10-10-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg>Lápiz
+      </button>
+      <button class="btn" data-tool="bucket" title="Balde (G)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 11l6-6 7 7-6 6a2 2 0 01-3 0l-4-4a2 2 0 010-3z"/><path d="M19 14c1.5 2 1.5 4 0 4s-1.5-2 0-4z" fill="currentColor"/></svg>Balde
+      </button>
+      <button class="btn" data-tool="shade" title="Sombra: oscurece · con Shift aclara (S)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor"/></svg>Sombra
+      </button>
+      <button class="btn" data-tool="picker" title="Cuentagotas (I) · o clic derecho">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 5l-2-2-7 7-1 4 4-1 7-7z"/><path d="M9 14l-4 4"/></svg>Gotero
+      </button>
+      <button class="btn" data-tool="eraser" title="Goma (E)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16l8-8 6 6-4 4H7l-3-2z"/><path d="M9 21h11"/></svg>Goma
+      </button>
+    </div>
+
+    <div class="toggle-row">
+      <button class="btn" id="symBtn" title="Espeja mientras pintás (dentro de cada cara)">⇋ Simetría</button>
+      <button class="btn" id="mirrorBtn" title="Copia brazo y pierna derechos al lado izquierdo">⧉ Reflejar lados</button>
+      <button class="btn on" id="gridBtn" title="Cuadrícula">▦ Grilla</button>
+      <button class="btn" id="undoBtn" title="Deshacer (Ctrl+Z)">↶</button>
+      <button class="btn" id="redoBtn" title="Rehacer (Ctrl+Y)">↷</button>
+    </div>
+
+    <hr class="sep">
+    <h2>Color</h2>
+    <div class="color-block">
+      <input type="color" id="picker" value="#5fbf57">
+      <input type="text" id="hex" value="#5FBF57" maxlength="7">
+      <span style="color:var(--muted);font-size:12px">Clic en un cuadrito para elegir rápido</span>
+    </div>
+    <div class="swatches" id="swatches"></div>
+  </section>
+
+  <!-- ===== 3D / acciones ===== -->
+  <section class="panel">
+    <h2>Vista previa 3D</h2>
+    <canvas id="stage"></canvas>
+    <div class="toggle-row" style="justify-content:center">
+      <button class="btn on" id="spinBtn">↻ Girar</button>
+      <button class="btn" id="walkBtn">🚶 Caminar</button>
+      <button class="btn on" id="overBtn">▣ Capa exterior</button>
+    </div>
+    <div class="hint">Arrastrá para girar a mano</div>
+
+    <hr class="sep">
+    <h2>Empezar desde una base</h2>
+    <div class="templates">
+      <div class="tmpl" data-tmpl="steve"><span class="em">🧍</span>Steve</div>
+      <div class="tmpl" data-tmpl="alex"><span class="em">🧍‍♀️</span>Alex</div>
+      <div class="tmpl" data-tmpl="random"><span class="em">🎲</span>Aleatorio</div>
+      <div class="tmpl" data-tmpl="blank"><span class="em">⬜</span>Vacío</div>
+    </div>
+
+    <hr class="sep">
+    <h2>Archivo</h2>
+    <div class="grid-actions">
+      <button class="btn full" id="importBtn">⬆ Importar PNG</button>
+      <button class="btn full primary" id="exportBtn">⬇ Descargar skin</button>
+    </div>
+    <input type="file" id="fileInput" accept="image/png">
+    <div class="hint">Sale en 64×64, listo para subir a Minecraft.</div>
+  </section>
+</div>
+
+<footer>
+  <kbd>B</kbd> lápiz · <kbd>G</kbd> balde · <kbd>S</kbd> sombra · <kbd>I</kbd> gotero · <kbd>E</kbd> goma · clic derecho = gotero<br>
+  Rueda = zoom · barra espaciadora + arrastrar = mover · <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>
+</footer>
+
+<!-- Lógica de la app (vanilla JS, sin frameworks) -->
+<script src="js/app.js"></script>
+</body>
+</html>
