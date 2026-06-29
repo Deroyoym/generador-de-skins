@@ -20,11 +20,22 @@ let tool="pencil", color="#5fbf57", showGrid=true, symmetry=false;
 let spaceDown=false, hoverPx=null;
 const view={scale:1, ox:0, oy:0};               // zoom/desplazamiento del lienzo
 
-/* ---------- historial ---------- */
+/* ---------- historial ----------
+   Cada entrada guarda el atlas + el flag slim del modelo, así deshacer/rehacer
+   restaura también la silueta 3D (clásico vs. slim), no solo la textura. */
+let currentSlim=false;                            // lo setea buildModel()
 const undoStack=[], redoStack=[];
-function snapshot(){ undoStack.push(actx.getImageData(0,0,T,T)); if(undoStack.length>80)undoStack.shift(); redoStack.length=0; }
-function undo(){ if(!undoStack.length)return; redoStack.push(actx.getImageData(0,0,T,T)); actx.putImageData(undoStack.pop(),0,0); refresh(); }
-function redo(){ if(!redoStack.length)return; undoStack.push(actx.getImageData(0,0,T,T)); actx.putImageData(redoStack.pop(),0,0); refresh(); }
+function snapshot(){ undoStack.push([actx.getImageData(0,0,T,T),currentSlim]); if(undoStack.length>80)undoStack.shift(); redoStack.length=0; }
+function restore(from,to){
+  if(!from.length)return;
+  to.push([actx.getImageData(0,0,T,T),currentSlim]);
+  const[img,slim]=from.pop();
+  actx.putImageData(img,0,0);
+  if(slim!==currentSlim) buildModel(slim);        // reconstruye el modelo si cambió la silueta
+  refresh();
+}
+function undo(){ restore(undoStack,redoStack); }
+function redo(){ restore(redoStack,undoStack); }
 
 /* ============================================================
    Regiones del atlas
@@ -60,16 +71,19 @@ function clampView(){
     view.oy=Math.min(0,Math.max(editor.height-span,view.oy));
   }
 }
+// ajedrez de transparencia pre-renderizado a resolución de atlas (64×64);
+// se escala con drawImage en vez de pintar 4096 rects en cada frame
+const checker=document.createElement("canvas");
+checker.width=checker.height=T;
+(function(){ const c=checker.getContext("2d");
+  for(let y=0;y<T;y++)for(let x=0;x<T;x++){ c.fillStyle=((x+y)&1)?"#20262f":"#171c24"; c.fillRect(x,y,1,1); }
+})();
 function refresh(){ drawEditor(); tex.needsUpdate=true; }
 function drawEditor(){
   const cp=cellPix();
   ectx.clearRect(0,0,editor.width,editor.height);
-  // ajedrez (transparencia) solo bajo el atlas
-  for(let y=0;y<T;y++)for(let x=0;x<T;x++){
-    ectx.fillStyle=((x+y)&1)?"#20262f":"#171c24";
-    ectx.fillRect(view.ox+x*cp,view.oy+y*cp,cp,cp);
-  }
   ectx.imageSmoothingEnabled=false;
+  ectx.drawImage(checker,0,0,T,T,view.ox,view.oy,64*cp,64*cp);
   ectx.drawImage(atlas,0,0,T,T,view.ox,view.oy,64*cp,64*cp);
 
   // bloques guía
@@ -116,14 +130,15 @@ function symPartner(x,y){
   }
   return null;
 }
-function applyTool(x,y,alt){
+function applyTool(x,y,alt,defer){
   if(tool==="shade"){ shadePx(x,y,alt); if(symmetry){const p=symPartner(x,y);if(p)shadePx(p[0],p[1],alt);} }
   else{
     const col=(tool==="eraser")?null:color;
     setPx(x,y,col);
     if(symmetry){const p=symPartner(x,y);if(p)setPx(p[0],p[1],col);}
   }
-  tex.needsUpdate=true; drawEditor();
+  tex.needsUpdate=true;
+  if(!defer) drawEditor();   // en trazos se difiere y se redibuja una sola vez al final
 }
 function bucketFill(x,y){
   const img=actx.getImageData(0,0,T,T),d=img.data,idx=(px,py)=>(py*T+px)*4,t=idx(x,y);
@@ -149,30 +164,27 @@ function copyFace(sx,sy,dx,dy,w,h,flip){
   }
   actx.putImageData(out,dx,dy);
 }
-function mirrorSides(){
-  // pares [sx,sy,dx,dy,w,h,flip] — brazo y pierna, capa base y exterior
-  const limbs=[
-    // BRAZO  der(40,16)->izq(32,48)
-    [44,16,36,48,4,4,true],[48,16,40,48,4,4,true],     // top, bottom
-    [44,20,36,52,4,12,true],[52,20,44,52,4,12,true],   // front, back
-    [40,20,40,52,4,12,false],[48,20,32,52,4,12,false], // +x<->-x (lados cruzados)
-    // MANGA der(40,32)->izq(48,48)
-    [44,32,52,48,4,4,true],[48,32,56,48,4,4,true],
-    [44,36,52,52,4,12,true],[52,36,60,52,4,12,true],
-    [40,36,56,52,4,12,false],[48,36,48,52,4,12,false],
-    // PIERNA der(0,16)->izq(16,48)
-    [4,16,20,48,4,4,true],[8,16,24,48,4,4,true],
-    [4,20,20,52,4,12,true],[12,20,28,52,4,12,true],
-    [0,20,24,52,4,12,false],[8,20,16,52,4,12,false],
-    // CAPA pierna der(0,32)->izq(0,48)
-    [4,32,20,48,4,4,true],[8,32,24,48,4,4,true],
-    [4,36,20,52,4,12,true],[12,36,28,52,4,12,true],
-    [0,36,24,52,4,12,false],[8,36,16,52,4,12,false],
-  ];
-  snapshot();
-  limbs.forEach(p=>copyFace(p[0],p[1],p[2],p[3],p[4],p[5],p[6]));
-  refresh();
-}
+// pares [sx,sy,dx,dy,w,h,flip] — copia lado derecho -> izquierdo (brazo, pierna, capa base y exterior)
+const LIMB_MIRROR=[
+  // BRAZO  der(40,16)->izq(32,48)
+  [44,16,36,48,4,4,true],[48,16,40,48,4,4,true],     // top, bottom
+  [44,20,36,52,4,12,true],[52,20,44,52,4,12,true],   // front, back
+  [40,20,40,52,4,12,false],[48,20,32,52,4,12,false], // +x<->-x (lados cruzados)
+  // MANGA der(40,32)->izq(48,48)
+  [44,32,52,48,4,4,true],[48,32,56,48,4,4,true],
+  [44,36,52,52,4,12,true],[52,36,60,52,4,12,true],
+  [40,36,56,52,4,12,false],[48,36,48,52,4,12,false],
+  // PIERNA der(0,16)->izq(16,48)
+  [4,16,20,48,4,4,true],[8,16,24,48,4,4,true],
+  [4,20,20,52,4,12,true],[12,20,28,52,4,12,true],
+  [0,20,24,52,4,12,false],[8,20,16,52,4,12,false],
+  // CAPA pierna der(0,32)->izq(0,48)  [dest = bloque capa (0,48), no la base (16,48)]
+  [4,32,4,48,4,4,true],[8,32,8,48,4,4,true],
+  [4,36,4,52,4,12,true],[12,36,12,52,4,12,true],
+  [0,36,8,52,4,12,false],[8,36,0,52,4,12,false],
+];
+function copyLimbs(){ LIMB_MIRROR.forEach(p=>copyFace(p[0],p[1],p[2],p[3],p[4],p[5],p[6])); }
+function mirrorSides(){ snapshot(); copyLimbs(); refresh(); }
 
 /* ============================================================
    Interacción con el lienzo (mouse + touch + zoom + pan)
@@ -204,7 +216,8 @@ function editorMove(e){
     e.preventDefault();
     if(lastPx&&(lastPx[0]!==x||lastPx[1]!==y)){
       let[x0,y0]=lastPx,dx=Math.abs(x-x0),dy=Math.abs(y-y0),sx=x0<x?1:-1,sy=y0<y?1:-1,err=dx-dy;
-      while(true){applyTool(x0,y0,e.shiftKey);if(x0===x&&y0===y)break;const e2=2*err;if(e2>-dy){err-=dy;x0+=sx;}if(e2<dx){err+=dx;y0+=sy;}}
+      while(true){applyTool(x0,y0,e.shiftKey,true);if(x0===x&&y0===y)break;const e2=2*err;if(e2>-dy){err-=dy;x0+=sx;}if(e2<dx){err+=dx;y0+=sy;}}
+      drawEditor();
     } else applyTool(x,y,e.shiftKey);
     lastPx=[x,y];
   } else drawEditor();
@@ -257,6 +270,8 @@ document.getElementById("undoBtn").addEventListener("click",undo);
 document.getElementById("redoBtn").addEventListener("click",redo);
 
 window.addEventListener("keydown",e=>{
+  const tag=e.target.tagName;
+  if(tag==="INPUT"||tag==="TEXTAREA")return;   // no robar teclas mientras se escribe (hex, etc.)
   if(e.code==="Space"){spaceDown=true;}
   if(e.ctrlKey||e.metaKey){if(e.key==="z"){e.preventDefault();undo();return;}if(e.key==="y"){e.preventDefault();redo();return;}}
   const map={b:"pencil",g:"bucket",s:"shade",i:"picker",e:"eraser"};
@@ -276,6 +291,7 @@ const SKIN_ASSETS={steve:"skins/steve.png",alex:"skins/alex.png"};
 function loadSkinAsset(url){
   const img=new Image();
   img.onload=()=>{clearAtlas();actx.imageSmoothingEnabled=false;actx.drawImage(img,0,0,T,T);buildModel(false);refresh();};
+  img.onerror=()=>{clearAtlas();buildModel(false);refresh();console.warn("No se pudo cargar el skin:",url);};
   img.src=url;
 }
 
@@ -410,8 +426,21 @@ document.querySelectorAll("[data-tmpl]").forEach(t=>t.addEventListener("click",(
 const fileInput=document.getElementById("fileInput");
 document.getElementById("importBtn").addEventListener("click",()=>fileInput.click());
 fileInput.addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const img=new Image();
-  img.onload=()=>{snapshot();clearAtlas();actx.imageSmoothingEnabled=false;actx.drawImage(img,0,0,img.width,img.height,0,0,img.width,img.height);refresh();};
-  img.src=URL.createObjectURL(f);fileInput.value="";});
+  const url=URL.createObjectURL(f);
+  img.onload=()=>{
+    snapshot();clearAtlas();actx.imageSmoothingEnabled=false;
+    if(img.width===64&&img.height===32){            // skin legacy: mitad superior + espejar miembros
+      actx.drawImage(img,0,0);
+      copyLimbs();
+    } else if(img.width===64&&img.height===64){      // skin moderna: tal cual
+      actx.drawImage(img,0,0);
+    } else {                                         // cualquier otro tamaño: escalar a 64×64
+      actx.drawImage(img,0,0,img.width,img.height,0,0,T,T);
+    }
+    refresh();URL.revokeObjectURL(url);
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);console.warn("No se pudo importar la imagen");};
+  img.src=url;fileInput.value="";});
 document.getElementById("exportBtn").addEventListener("click",()=>{
   // Blob + objectURL: la forma más confiable de forzar descarga (los data: URL fallan en Safari/Firefox)
   atlas.toBlob(blob=>{
@@ -441,8 +470,9 @@ function showSaveModal(url){
       '<div id="copyMsg" style="font-size:11px;color:#5fbf57;margin-top:10px;min-height:14px"></div>'+
     '</div>';
   document.body.appendChild(ov);
-  ov.addEventListener("click",e=>{if(e.target===ov)ov.remove();});
-  ov.querySelector("#closeModal").onclick=()=>ov.remove();
+  const close=()=>{ ov.remove(); if(url.startsWith("blob:"))URL.revokeObjectURL(url); };
+  ov.addEventListener("click",e=>{if(e.target===ov)close();});
+  ov.querySelector("#closeModal").onclick=close;
   ov.querySelector("#dlAgain").onclick=()=>{const a=document.createElement("a");a.download="mi-skin.png";a.href=url;document.body.appendChild(a);a.click();a.remove();};
   ov.querySelector("#copyImg").onclick=async()=>{
     const msg=ov.querySelector("#copyMsg");
@@ -500,6 +530,8 @@ function addLimb(w,h,d,uv,ov,jointX,jointY,phase){
   pivot.add(part);charGroup.add(pivot);limbs.push({pivot,phase});
 }
 function buildModel(slim){
+  currentSlim=slim;                                       // para que el historial restaure la silueta
+  charGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); // liberar geometrías en la GPU
   while(charGroup.children.length)charGroup.remove(charGroup.children[0]);
   limbs.length=0;overlays.length=0;
   const aw=slim?3:4, ax=slim?5.5:6;
@@ -516,7 +548,7 @@ function buildModel(slim){
 }
 
 /* ---------- controles 3D ---------- */
-let autoSpin=true,walk=false,overlayOn=true,dragging=false,lastX=0,lastY=0,velY=0,rotY=0.5,rotX=0,t0=0;
+let autoSpin=true,walk=false,overlayOn=true,dragging=false,lastX=0,lastY=0,velY=0,rotY=0.5,rotX=0;
 const spinBtn=document.getElementById("spinBtn"),walkBtn=document.getElementById("walkBtn"),overBtn=document.getElementById("overBtn");
 spinBtn.addEventListener("click",()=>{autoSpin=!autoSpin;spinBtn.classList.toggle("on",autoSpin);});
 walkBtn.addEventListener("click",()=>{walk=!walk;walkBtn.classList.toggle("on",walk);
@@ -539,7 +571,7 @@ function loop(ts){
   const t=(ts||0)/1000;
   if(autoSpin)rotY+=0.012; else if(!dragging){rotY+=velY;velY*=0.94;if(Math.abs(velY)<0.0005)velY=0;}
   charGroup.rotation.y=rotY;charGroup.rotation.x=rotX;
-  if(walk){const a=Math.sin(t*4)*0.5;limbs.forEach(l=>l.pivot.rotation.x=Math.sin(t*4+l.phase)*0.5);}
+  if(walk){limbs.forEach(l=>l.pivot.rotation.x=Math.sin(t*4+l.phase)*0.5);}
   renderer.render(scene,camera);
 }
 
