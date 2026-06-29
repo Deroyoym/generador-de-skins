@@ -272,23 +272,12 @@ function fillR(x,y,w,h,c){actx.fillStyle=c;actx.fillRect(x,y,w,h);}
 function noise(x,y,w,h,amt){const img=actx.getImageData(x,y,w,h),d=img.data;
   for(let i=0;i<d.length;i+=4){if(d[i+3]===0)continue;const n=(Math.random()*2-1)*amt;d[i]=clamp(d[i]+n);d[i+1]=clamp(d[i+1]+n);d[i+2]=clamp(d[i+2]+n);}
   actx.putImageData(img,x,y);}
-function buildHumanoid(p){
-  clearAtlas();
-  fillR(0,0,32,16,p.skin); fillR(16,16,24,16,p.shirt); fillR(40,16,16,16,p.skin);
-  fillR(0,16,16,16,p.pants); fillR(32,48,16,16,p.skin); fillR(16,48,16,16,p.pants);
-  fillR(8,0,8,8,p.hair); fillR(0,8,32,2,p.hair);
-  fillR(0,28,16,4,p.shoe); fillR(16,60,16,4,p.shoe);
-  if(p.sleeve){fillR(40,16,16,5,p.shirt);fillR(32,48,16,5,p.shirt);}
-  fillR(9,12,1,1,"#ffffff");fillR(10,12,1,1,p.eye);fillR(13,12,1,1,"#ffffff");fillR(14,12,1,1,p.eye);
-  fillR(11,14,3,1,p.mouth);
-  if(p.tex){noise(16,16,24,16,14);noise(0,16,16,16,12);noise(16,48,16,16,12);}
-  buildModel(false);
-  refresh();
+const SKIN_ASSETS={steve:"skins/steve.png",alex:"skins/alex.png"};
+function loadSkinAsset(url){
+  const img=new Image();
+  img.onload=()=>{clearAtlas();actx.imageSmoothingEnabled=false;actx.drawImage(img,0,0,T,T);buildModel(false);refresh();};
+  img.src=url;
 }
-const TEMPLATES={
-  steve:{skin:"#b58863",hair:"#3a2a16",shirt:"#27a3a3",pants:"#3b4b9e",shoe:"#5a3b27",eye:"#3a2a6b",mouth:"#8a5a3a",sleeve:false,tex:false},
-  alex:{skin:"#e8b89b",hair:"#c8722e",shirt:"#5fa843",pants:"#6a5a3a",shoe:"#7a6a4a",eye:"#3a6b3a",mouth:"#b07a5a",sleeve:true,tex:false},
-};
 
 /* ----- generador aleatorio por capas (cuerpo + peinado + cara + atuendo) -----
    Cada capa es independiente y se elige al azar de su propia lista, así las
@@ -353,6 +342,31 @@ const OUTFITS=[
     fillR(20,20,8,12,p.pants);                            // babero al frente del torso
     fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
   }},
+  {name:"chaleco",   draw(p){
+    fillR(16,16,24,16,p.shirt);
+    fillR(16,32,24,16,p.accent);                          // chaleco como capa exterior
+    fillR(23,20,2,12,p.shirt);                            // abierto al frente: se ve la remera
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+  {name:"capucha",   draw(p){
+    fillR(16,16,24,16,p.shirt);
+    fillR(16,32,24,16,p.accent);                          // buzo/campera con capucha
+    fillR(40,32,16,16,p.accent); fillR(48,48,16,16,p.accent); // mangas largas (capa)
+    headOver(8,0,8,3,p.accent); headOver(0,8,32,1,p.accent);  // capucha asomando atrás de la cabeza
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+  {name:"deportivo", draw(p){
+    fillR(16,16,24,16,p.shirt);
+    fillR(40,16,16,5,p.shirt); fillR(32,48,16,5,p.shirt); // manga corta
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+    fillR(4,20,2,12,p.accent); fillR(20,52,2,12,p.accent); // franja lateral en el pantalón
+  }},
+  {name:"traje",     draw(p){
+    fillR(16,16,24,16,p.accent);                          // saco oscuro
+    fillR(22,20,4,2,p.shirt);                             // corbata/moño al cuello
+    fillR(40,16,16,5,p.accent); fillR(32,48,16,5,p.accent);
+    fillR(0,16,16,16,p.accent); fillR(16,48,16,16,p.accent); // pantalón a juego
+  }},
 ];
 
 function randomTemplate(){
@@ -387,7 +401,7 @@ document.querySelectorAll("[data-tmpl]").forEach(t=>t.addEventListener("click",(
   snapshot();const k=t.dataset.tmpl;
   if(k==="blank"){clearAtlas();buildModel(false);refresh();}
   else if(k==="random")buildRandomHumanoid(randomTemplate());
-  else buildHumanoid(TEMPLATES[k]);
+  else loadSkinAsset(SKIN_ASSETS[k]);
 }));
 
 /* ============================================================
@@ -536,7 +550,7 @@ function init(){
   buildModel(false);
   resize3D();
   clampView();
-  buildHumanoid(TEMPLATES.steve);
+  loadSkinAsset(SKIN_ASSETS.steve);
   undoStack.length=0;
   drawEditor();
   requestAnimationFrame(loop);
