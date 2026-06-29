@@ -282,23 +282,112 @@ function buildHumanoid(p){
   fillR(9,12,1,1,"#ffffff");fillR(10,12,1,1,p.eye);fillR(13,12,1,1,"#ffffff");fillR(14,12,1,1,p.eye);
   fillR(11,14,3,1,p.mouth);
   if(p.tex){noise(16,16,24,16,14);noise(0,16,16,16,12);noise(16,48,16,16,12);}
+  buildModel(false);
   refresh();
 }
 const TEMPLATES={
   steve:{skin:"#b58863",hair:"#3a2a16",shirt:"#27a3a3",pants:"#3b4b9e",shoe:"#5a3b27",eye:"#3a2a6b",mouth:"#8a5a3a",sleeve:false,tex:false},
   alex:{skin:"#e8b89b",hair:"#c8722e",shirt:"#5fa843",pants:"#6a5a3a",shoe:"#7a6a4a",eye:"#3a6b3a",mouth:"#b07a5a",sleeve:true,tex:false},
 };
+
+/* ----- generador aleatorio por capas (cuerpo + peinado + cara + atuendo) -----
+   Cada capa es independiente y se elige al azar de su propia lista, así las
+   combinaciones crecen multiplicativamente en vez de necesitar un template
+   "completo" por cada apariencia posible. Todas pintan directo sobre las
+   regiones del UV map de 64×64 (mismas que usa el editor y el modelo 3D). */
+const r=a=>a[Math.floor(Math.random()*a.length)];
+const SKIN_TONES=["#ffe0bd","#f1c27d","#e0ac69","#c68642","#8d5524","#5a3a26"];
+const HAIR_COLORS=["#1a1a1a","#3a2a16","#6b4423","#c8722e","#d8c84a","#9a3a3a","#5f4fbf"];
+const CLOTH_COLORS=["#5fbf57","#e1574c","#3a5fc0","#f4c542","#c0418f","#2a8f8f","#7a3fc0","#3b3b3b"];
+const SHOE_COLORS=["#3b3b3b","#1a1a1a","#5a3b27","#ffffff"];
+const EYE_COLORS=["#3a2a6b","#3a6b3a","#6b3a3a","#222","#2a4a8a","#6b4a2a"];
+const MOUTH_COLORS=["#8a5a3a","#6b3a2a","#a85a4a","#5a3a2a"];
+
+function headBase(x,y,w,h,c){fillR(x,y,w,h,c);}        // capa base de la cabeza (0,0)-(32,16)
+function headOver(x,y,w,h,c){fillR(32+x,y,w,h,c);}     // capa "sombrero" (32,0)-(64,16), mismo recorte +32px
+
+const HAIRSTYLES=[
+  {name:"corto",  draw(p){ headBase(8,0,8,8,p.hair); headBase(0,8,32,2,p.hair); }},
+  {name:"rapado", draw(p){ headBase(8,0,8,8,p.hair); }},
+  {name:"calvo",  draw(p){ /* sin pelo: queda la piel */ }},
+  {name:"largo",  draw(p){ headBase(8,0,8,8,p.hair); headBase(0,8,32,3,p.hair);
+                            headOver(8,0,8,2,p.hair); headOver(0,8,32,5,p.hair); }},
+  {name:"gorra",  draw(p){ headBase(8,0,8,8,p.cap); headBase(0,8,32,2,p.cap);
+                            headOver(8,0,8,1,p.cap); headOver(0,7,32,2,p.cap); }},
+];
+
+const FACES=[
+  {name:"normal",       draw(p){ fillR(9,12,1,1,"#fff"); fillR(10,12,1,1,p.eye); fillR(13,12,1,1,"#fff"); fillR(14,12,1,1,p.eye);
+                                  fillR(11,14,3,1,p.mouth); }},
+  {name:"grandes",      draw(p){ fillR(8,11,2,2,"#fff"); fillR(9,12,1,1,p.eye); fillR(14,11,2,2,"#fff"); fillR(14,12,1,1,p.eye);
+                                  fillR(10,14,4,2,p.mouth); }},
+  {name:"sonriente",    draw(p){ fillR(9,12,1,1,"#fff"); fillR(10,12,1,1,p.eye); fillR(13,12,1,1,"#fff"); fillR(14,12,1,1,p.eye);
+                                  fillR(11,14,3,1,p.mouth); fillR(10,15,5,1,p.mouth); }},
+  {name:"sorprendido",  draw(p){ fillR(9,11,2,2,"#1a1a1a"); fillR(13,11,2,2,"#1a1a1a"); fillR(11,14,2,2,p.mouth); }},
+  {name:"entrecerrado", draw(p){ fillR(9,12,2,1,p.eye); fillR(13,12,2,1,p.eye); fillR(11,14,3,1,p.mouth); }},
+];
+
+const OUTFITS=[
+  {name:"remera",    draw(p){
+    fillR(16,16,24,16,p.shirt); fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+    fillR(40,16,16,5,p.shirt); fillR(32,48,16,5,p.shirt); // manga corta
+  }},
+  {name:"musculosa", draw(p){
+    fillR(16,16,24,16,p.shirt); fillR(16,16,24,3,p.skin); // hombros descubiertos
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+  {name:"campera",   draw(p){
+    fillR(16,16,24,16,p.shirt);
+    fillR(16,32,24,16,p.accent);                          // capa exterior del torso
+    fillR(40,32,16,16,p.accent); fillR(48,48,16,16,p.accent); // mangas largas (capa)
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+  {name:"rayas",     draw(p){
+    fillR(16,16,24,16,p.shirt);
+    for(let y=20;y<32;y+=4) fillR(16,y,24,2,p.accent);    // banda que envuelve todo el torso
+    fillR(40,16,16,5,p.shirt); fillR(32,48,16,5,p.shirt);
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+  {name:"overol",    draw(p){
+    fillR(16,16,24,16,p.shirt);
+    fillR(20,20,8,12,p.pants);                            // babero al frente del torso
+    fillR(0,16,16,16,p.pants); fillR(16,48,16,16,p.pants);
+  }},
+];
+
 function randomTemplate(){
-  const skins=["#ffe0bd","#f1c27d","#e0ac69","#c68642","#8d5524","#5a3a26"];
-  const hairs=["#1a1a1a","#3a2a16","#6b4423","#c8722e","#d8c84a","#9a3a3a","#5f4fbf"];
-  const cloth=["#5fbf57","#e1574c","#3a5fc0","#f4c542","#c0418f","#2a8f8f","#7a3fc0","#3b3b3b"];
-  const r=a=>a[Math.floor(Math.random()*a.length)];
-  return{skin:r(skins),hair:r(hairs),shirt:r(cloth),pants:r(cloth),shoe:r(["#3b3b3b","#1a1a1a","#5a3b27","#ffffff"]),
-    eye:r(["#3a2a6b","#3a6b3a","#6b3a3a","#222"]),mouth:"#8a5a3a",sleeve:Math.random()<.5,tex:true};
+  let shirt=r(CLOTH_COLORS), accent=r(CLOTH_COLORS);
+  while(accent===shirt) accent=r(CLOTH_COLORS);
+  return{
+    skin:r(SKIN_TONES), hair:r(HAIR_COLORS), cap:r(CLOTH_COLORS),
+    shirt, accent, pants:r(CLOTH_COLORS), shoe:r(SHOE_COLORS),
+    eye:r(EYE_COLORS), mouth:r(MOUTH_COLORS),
+    slim:Math.random()<.5,
+    hairstyle:r(HAIRSTYLES), face:r(FACES), outfit:r(OUTFITS),
+    tex:true,
+  };
 }
+function buildRandomHumanoid(p){
+  clearAtlas();
+  fillR(0,0,32,16,p.skin); fillR(16,16,24,16,p.skin); fillR(40,16,16,16,p.skin);
+  fillR(0,16,16,16,p.skin); fillR(32,48,16,16,p.skin); fillR(16,48,16,16,p.skin);
+  p.hairstyle.draw(p);
+  p.outfit.draw(p);
+  fillR(0,28,16,4,p.shoe); fillR(16,60,16,4,p.shoe);
+  p.face.draw(p); // último: ojos/boca siempre por encima del pelo y la ropa
+  if(p.tex){
+    noise(16,16,24,16,14); noise(0,16,16,16,12); noise(16,48,16,16,12);
+    noise(16,32,24,16,14); noise(40,32,16,16,12); noise(48,48,16,16,12);
+  }
+  buildModel(p.slim);
+  refresh();
+}
+
 document.querySelectorAll("[data-tmpl]").forEach(t=>t.addEventListener("click",()=>{
   snapshot();const k=t.dataset.tmpl;
-  if(k==="blank"){clearAtlas();refresh();}else if(k==="random")buildHumanoid(randomTemplate());else buildHumanoid(TEMPLATES[k]);
+  if(k==="blank"){clearAtlas();buildModel(false);refresh();}
+  else if(k==="random")buildRandomHumanoid(randomTemplate());
+  else buildHumanoid(TEMPLATES[k]);
 }));
 
 /* ============================================================
