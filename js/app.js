@@ -512,8 +512,10 @@ function faceUV(g,f,x1,y1,x2,y2){const a=g.attributes.uv,o=f*4;
   a.setXY(o,x1/T,y1/T);a.setXY(o+1,x2/T,y1/T);a.setXY(o+2,x1/T,y2/T);a.setXY(o+3,x2/T,y2/T);}
 function mapBox(g,u,v,w,h,d){
   faceUV(g,2,u+d,v,u+d+w,v+d); faceUV(g,3,u+d+w,v,u+d+2*w,v+d);
-  faceUV(g,0,u,v+d,u+d,v+d+h); faceUV(g,4,u+d,v+d,u+d+w,v+d+h);
-  faceUV(g,1,u+d+w,v+d,u+2*d+w,v+d+h); faceUV(g,5,u+2*d+w,v+d,u+2*d+2*w,v+d+h);
+  // +X(0) y -X(1) van cruzadas respecto al orden del atlas: la 1ª región del
+  // renglón es el lado -X y la 3ª es el +X (convención de Minecraft skinview)
+  faceUV(g,1,u,v+d,u+d,v+d+h); faceUV(g,4,u+d,v+d,u+d+w,v+d+h);
+  faceUV(g,0,u+d+w,v+d,u+2*d+w,v+d+h); faceUV(g,5,u+2*d+w,v+d,u+2*d+2*w,v+d+h);
   g.attributes.uv.needsUpdate=true;
 }
 function buildPart(w,h,d,uv,ov){
