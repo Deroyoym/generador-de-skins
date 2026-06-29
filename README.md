@@ -24,8 +24,11 @@ La vista 3D usa [Three.js](https://threejs.org/) cargado desde CDN.
 ├── index.html        # estructura de la página
 ├── css/
 │   └── styles.css    # estilos (estética Minecraft)
-└── js/
-    └── app.js        # toda la lógica: editor 2D + render 3D
+├── js/
+│   └── app.js        # toda la lógica: editor 2D + render 3D
+└── skins/
+    ├── steve.png     # plantilla "Steve"
+    └── alex.png      # plantilla "Alex"
 ```
 
 ## 🚀 Deploy en Vercel
