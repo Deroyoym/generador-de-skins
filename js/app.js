@@ -229,19 +229,70 @@ window.addEventListener("mousemove",editorMove);
 window.addEventListener("mouseup",editorUp);
 editor.addEventListener("mouseleave",editorLeave);
 editor.addEventListener("contextmenu",e=>e.preventDefault());
-editor.addEventListener("touchstart",editorDown,{passive:false});
-editor.addEventListener("touchmove",editorMove,{passive:false});
-window.addEventListener("touchend",editorUp);
-editor.addEventListener("wheel",e=>{
-  e.preventDefault();
-  const[cx,cy]=evCanvas(e),cp=cellPix();
-  const wx=(cx-view.ox)/cp,wy=(cy-view.oy)/cp;
-  view.scale=Math.max(1,Math.min(6,view.scale*(e.deltaY<0?1.2:1/1.2)));
+/* ---------- zoom centralizado (rueda, pellizco y botones) ---------- */
+function zoomAt(mul,cx,cy){
+  const cp=cellPix();
+  const wx=(cx-view.ox)/cp, wy=(cy-view.oy)/cp;       // punto del lienzo bajo el cursor/dedos
+  view.scale=Math.max(1,Math.min(8, view.scale*mul));
   const ncp=cellPix();
-  view.ox=cx-wx*ncp;view.oy=cy-wy*ncp;clampView();
+  view.ox=cx-wx*ncp; view.oy=cy-wy*ncp; clampView();  // mantiene ese punto fijo
   zoomhud.textContent=Math.round(view.scale*100)+"%";
   drawEditor();
+}
+function resetZoom(){ view.scale=1; clampView(); zoomhud.textContent="100%"; drawEditor(); }
+editor.addEventListener("wheel",e=>{ e.preventDefault(); const[cx,cy]=evCanvas(e); zoomAt(e.deltaY<0?1.2:1/1.2,cx,cy); },{passive:false});
+document.getElementById("zoomInBtn").addEventListener("click",()=>zoomAt(1.25,editor.width/2,editor.height/2));
+document.getElementById("zoomOutBtn").addEventListener("click",()=>zoomAt(1/1.25,editor.width/2,editor.height/2));
+document.getElementById("zoomResetBtn").addEventListener("click",resetZoom);
+
+/* ---------- táctil: 1 dedo pinta · 2 dedos mueven y hacen zoom (pellizco) ---------- */
+let pinch=null;
+function touchPt(t){ const r=editor.getBoundingClientRect();
+  return [(t.clientX-r.left)/r.width*editor.width,(t.clientY-r.top)/r.height*editor.height]; }
+function abortStroke(){ if(!painting)return; painting=false; lastPx=null;
+  const s=undoStack.pop(); if(s)actx.putImageData(s[0],0,0); refresh(); }
+editor.addEventListener("touchstart",e=>{
+  if(e.touches.length>=2){                              // dos dedos = navegar
+    abortStroke();                                      // descarta el puntito accidental del 1er dedo
+    const [ax,ay]=touchPt(e.touches[0]), [bx,by]=touchPt(e.touches[1]);
+    pinch={dist:Math.hypot(ax-bx,ay-by), mx:(ax+bx)/2, my:(ay+by)/2};
+    e.preventDefault(); return;
+  }
+  pinch=null; e.preventDefault();
+  const[x,y]=evPx(e);
+  if(tool==="bucket"){snapshot();bucketFill(x,y);return;}
+  if(tool==="picker"){pickColor(x,y);return;}
+  snapshot();painting=true;lastPx=[x,y];
+  hoverPx=(x>=0&&y>=0&&x<T&&y<T)?[x,y]:null;
+  applyTool(x,y,false);
 },{passive:false});
+editor.addEventListener("touchmove",e=>{
+  if(pinch && e.touches.length>=2){
+    e.preventDefault();
+    const [ax,ay]=touchPt(e.touches[0]), [bx,by]=touchPt(e.touches[1]);
+    const dist=Math.hypot(ax-bx,ay-by), mx=(ax+bx)/2, my=(ay+by)/2;
+    view.ox+=mx-pinch.mx; view.oy+=my-pinch.my;         // paneo según el punto medio
+    if(pinch.dist>0) zoomAt(dist/pinch.dist,mx,my);      // zoom por pellizco (anclado al medio)
+    else { clampView(); drawEditor(); }
+    pinch={dist,mx,my};
+    return;
+  }
+  if(painting && e.touches.length===1){
+    e.preventDefault();
+    const[x,y]=evPx(e);
+    hoverPx=(x>=0&&y>=0&&x<T&&y<T)?[x,y]:null;
+    if(lastPx&&(lastPx[0]!==x||lastPx[1]!==y)){
+      let[x0,y0]=lastPx,dx=Math.abs(x-x0),dy=Math.abs(y-y0),sx=x0<x?1:-1,sy=y0<y?1:-1,err=dx-dy;
+      while(true){applyTool(x0,y0,false,true);if(x0===x&&y0===y)break;const e2=2*err;if(e2>-dy){err-=dy;x0+=sx;}if(e2<dx){err+=dx;y0+=sy;}}
+      drawEditor();
+    } else applyTool(x,y,false);
+    lastPx=[x,y];
+  }
+},{passive:false});
+function endTouch(e){ if(!e.touches||e.touches.length<2)pinch=null;
+  if(!e.touches||e.touches.length===0){painting=false;lastPx=null;} }
+editor.addEventListener("touchend",endTouch);
+editor.addEventListener("touchcancel",endTouch);
 
 /* ============================================================
    Color
