@@ -48,6 +48,10 @@
 
   .sep{height:1px;background:var(--line);margin:12px 0;border:0}
   .toggle-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .zoom-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .zoom-row .btn{min-width:44px;justify-content:center}
+  .touch-hint{color:var(--muted);font-size:11px;margin-left:2px}
+  @media (hover:hover) and (pointer:fine){ .touch-hint{display:none} }
 
   .color-block{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   #picker{width:44px;height:44px;padding:0;border:1px solid var(--line);border-radius:3px;background:none;cursor:pointer}
